@@ -8,46 +8,58 @@
 #include "wav.h"
 #include <stdio.h>
 #include <stdint.h>
+#include <SPI.h>
+#include <SD.h>
 
 // read an unsigned 32-bit integer in little endian format
-static inline uint32_t read_u32le(FILE *fp){
-	uint32_t b1 = fgetc(fp);
-	uint32_t b2 = fgetc(fp);
-	uint32_t b3 = fgetc(fp);
-	uint32_t b4 = fgetc(fp);
+static inline uint32_t read_u32le(File fp){
+	uint32_t b1 = fp.read();
+	uint32_t b2 = fp.read();
+	uint32_t b3 = fp.read();
+	uint32_t b4 = fp.read();
 	return b1 | (b2 << 8) | (b3 << 16) | (b4 << 24);
 }
 
 // read an unsigned 16-bit integer in little endian format
-static inline uint16_t read_u16le(FILE *fp){
-	uint16_t b1 = fgetc(fp);
-	uint16_t b2 = fgetc(fp);
+static inline uint16_t read_u16le(File fp){
+	uint16_t b1 = fp.read();
+	uint16_t b2 = fp.read();
 	return b1 | (b2 << 8);
 }
 
 // write an unsigned 32-bit integer in little endian format
-static inline void write_u32le(FILE *fp, uint32_t v){
-	fputc(v & 0xFF, fp);
-	fputc((v >> 8) & 0xFF, fp);
-	fputc((v >> 16) & 0xFF, fp);
-	fputc((v >> 24) & 0xFF, fp);
+static inline void write_u32le(File fp, uint32_t v){
+	fp.write(v & 0xFF);
+	fp.write((v >> 8) & 0xFF);
+	fp.write((v >> 16) & 0xFF);
+	fp.write((v >> 24) & 0xFF);
 }
 
 // write an unsigned 16-bit integer in little endian format
-static inline void write_u16le(FILE *fp, uint16_t v){
-	fputc(v & 0xFF, fp);
-	fputc((v >> 8) & 0xFF, fp);
+static inline void write_u16le(File fp, uint16_t v){
+	fp.write(v & 0xFF);
+	fp.write((v >> 8) & 0xFF);
 }
+
 
 // load a WAV file (returns NULL for error)
 sf_snd sf_wavload(const char *file){
-	FILE *fp = fopen(file, "rb");
+
+	
+	File fp;
+
+	fp = SD.open("test.txt", FILE_WRITE);
+	//FILE *fp = fopen(file, "rb");
+	
 	if (fp == NULL)
+	{
+		Serial.printf("cannot open for reading %s\n", file);
 		return NULL;
+	}
 
 	uint32_t riff = read_u32le(fp);
 	if (riff != 0x46464952){ // 'RIFF'
-		fclose(fp);
+		fp.close();
 		return NULL;
 	}
 
@@ -55,7 +67,7 @@ sf_snd sf_wavload(const char *file){
 
 	uint32_t wave = read_u32le(fp);
 	if (wave != 0x45564157){ // 'WAVE'
-		fclose(fp);
+		fp.close();
 		return NULL;
 	}
 
@@ -65,14 +77,14 @@ sf_snd sf_wavload(const char *file){
 	uint16_t numchannels;
 	uint32_t samplerate;
 	uint16_t bps;
-	while (!feof(fp)){
+	while (!fp.available()){
 		uint32_t chunkid = read_u32le(fp);
 		uint32_t chunksize = read_u32le(fp);
 		if (chunkid == 0x20746D66){ // 'fmt '
 
 			// confirm we haven't already processed the fmt chunk, and that it's a good size
 			if (found_fmt || chunksize < 16){
-				fclose(fp);
+				fp.close();
 				return NULL;
 			}
 
@@ -88,20 +100,20 @@ sf_snd sf_wavload(const char *file){
 
 			// only support 1/2-channel 16-bit samples
 			if (audioformat != 1 || bps != 16 || (numchannels != 1 && numchannels != 2)){
-				fclose(fp);
+				fp.close();
 				return NULL;
 			}
 
 			// skip ahead of the rest of the fmt chunk
 			if (chunksize > 16)
-				fseek(fp, chunksize - 16, SEEK_CUR);
+				fp.seek(chunksize - 16, SeekMode::SeekCur);
 		}
 		else if (chunkid == 0x61746164){ // 'data'
 
 			// confirm we've already processed the fmt chunk
 			// confirm chunk size is evenly divisible by bytes per sample
 			if (!found_fmt || (chunksize % (numchannels * bps / 8)) != 0){
-				fclose(fp);
+				fp.close();
 				return NULL;
 			}
 
@@ -109,7 +121,7 @@ sf_snd sf_wavload(const char *file){
 			int scount = chunksize / (numchannels * bps / 8);
 			sf_snd snd = sf_snd_new(scount, samplerate, false);
 			if (snd == NULL){
-				fclose(fp);
+				fp.close();
 				return NULL;
 			}
 
@@ -137,17 +149,17 @@ sf_snd sf_wavload(const char *file){
 			}
 
 			// we've loaded the wav data, so just return now
-			fclose(fp);
+			fp.close();
 			return snd;
 		}
 		else{ // skip an unknown chunk
 			if (chunksize > 0)
-				fseek(fp, chunksize, SEEK_CUR);
+				fp.seek(chunksize, SeekMode::SeekCur);
 		}
 	}
 
 	// didn't find data chunk, so fail
-	fclose(fp);
+	fp.close();
 	return NULL;
 }
 
@@ -157,7 +169,7 @@ static float clampf(float v, float min, float max){
 
 // save a WAV file (returns false for error)
 bool sf_wavsave(sf_snd snd, const char *file){
-	FILE *fp = fopen(file, "wb");
+	File fp = SD.open(file, FILE_WRITE);
 	if (fp == NULL)
 		return false;
 
@@ -200,6 +212,6 @@ bool sf_wavsave(sf_snd snd, const char *file){
 		write_u16le(fp, (uint16_t)Rv);
 	}
 
-	fclose(fp);
+	fp.close();
 	return true;
 }

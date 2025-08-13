@@ -230,7 +230,7 @@ static inline int reverb(sf_snd input_snd, float tail, const char *preset, const
 	return 0;
 }
 
-int main(int argc, char **argv){
+int alt_main(int argc, char **argv){
 	if (argc < 4)
 		return printhelp();
 
