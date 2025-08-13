@@ -10,12 +10,12 @@
 #include <string.h>
 
 sf_snd sf_snd_new(int size, int rate, bool clear){
-	sf_snd snd = sf_malloc(sizeof(sf_snd_st));
+	sf_snd snd = (sf_snd_st *)sf_malloc(sizeof(sf_snd_st));
 	if (snd == NULL)
 		return NULL;
 	snd->size = size;
 	snd->rate = rate;
-	snd->samples = sf_malloc(sizeof(sf_sample_st) * size);
+	snd->samples = (sf_sample_st *) sf_malloc(sizeof(sf_sample_st) * size);
 	if (snd->samples == NULL){
 		sf_free(snd);
 		return NULL;
