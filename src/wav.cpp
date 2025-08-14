@@ -48,7 +48,7 @@ sf_snd sf_wavload(const char *file){
 	
 	File fp;
 
-	fp = SD.open("test.txt", FILE_WRITE);
+	fp = SD.open(file, FILE_WRITE);
 	//FILE *fp = fopen(file, "rb");
 	
 	if (fp == NULL)
