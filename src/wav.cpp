@@ -41,33 +41,38 @@ static inline void write_u16le(File fp, uint16_t v){
 	fp.write((v >> 8) & 0xFF);
 }
 
-
+#define LINE Serial.printf("%s:%d \n", __FUNCTION__, __LINE__)
 // load a WAV file (returns NULL for error)
 sf_snd sf_wavload(const char *file){
 
 	
 	File fp;
 
-	fp = SD.open(file, FILE_WRITE);
+	fp = SD.open(file);
 	//FILE *fp = fopen(file, "rb");
+	LINE;
 	
-	if (fp == NULL)
+	if (!fp)
 	{
 		Serial.printf("cannot open for reading %s\n", file);
 		return NULL;
 	}
 
+	LINE;
 	uint32_t riff = read_u32le(fp);
 	if (riff != 0x46464952){ // 'RIFF'
+		LINE;
 		fp.close();
 		return NULL;
 	}
 
+	LINE;
 	read_u32le(fp); // filesize; don't really care about this
 
 	uint32_t wave = read_u32le(fp);
 	if (wave != 0x45564157){ // 'WAVE'
 		fp.close();
+		LINE;
 		return NULL;
 	}
 
@@ -114,6 +119,7 @@ sf_snd sf_wavload(const char *file){
 			// confirm chunk size is evenly divisible by bytes per sample
 			if (!found_fmt || (chunksize % (numchannels * bps / 8)) != 0){
 				fp.close();
+				LINE;
 				return NULL;
 			}
 
@@ -122,6 +128,7 @@ sf_snd sf_wavload(const char *file){
 			sf_snd snd = sf_snd_new(scount, samplerate, false);
 			if (snd == NULL){
 				fp.close();
+				LINE;
 				return NULL;
 			}
 
@@ -149,6 +156,7 @@ sf_snd sf_wavload(const char *file){
 			}
 
 			// we've loaded the wav data, so just return now
+			LINE;
 			fp.close();
 			return snd;
 		}
@@ -159,6 +167,7 @@ sf_snd sf_wavload(const char *file){
 	}
 
 	// didn't find data chunk, so fail
+	LINE;
 	fp.close();
 	return NULL;
 }

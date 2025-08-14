@@ -14,7 +14,7 @@ static const gpio_num_t SDCARD_CSPIN = GPIO_NUM_4;
 void runitTask (void *NOTUSED)
 {
 	int i;
-	char *msg[] = {"notused.exe", "/up.wav", "/output.wav", "highpass", "300", "3"};
+	char *msg[] = {"notused.exe", "/one.wav", "/output.wav", "highpass", "300", "3"};
 	i = sizeof(msg) / sizeof(msg[0]);
 
     Serial.printf("lllllllllllllllllllllllllllllllllll\n");
