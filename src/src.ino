@@ -10,17 +10,21 @@ extern int alt_main(int argc, char **argv);
 extern void setup_watchdogs(void);
 
 static const gpio_num_t SDCARD_CSPIN = GPIO_NUM_4;
+extern bool playWavFromSD(const char* filename);
 
 void runitTask (void *NOTUSED)
 {
 	int i;
-	char *msg[] = {"notused.exe", "/one.wav", "/output.wav", "highpass", "300", "3"};
+	char *msg[] = {"notused.exe", "/one.wav", "/output.wav", "lowpass", "300", "3"};
 	i = sizeof(msg) / sizeof(msg[0]);
 
     Serial.printf("lllllllllllllllllllllllllllllllllll\n");
     Serial.flush();
 
 	alt_main(i, msg);
+
+	playWavFromSD(msg[2]);
+	
     Serial.printf("sssssssssssssssssssssssssssssss\n");
     Tdelay(-1);
 }
@@ -38,9 +42,6 @@ void setup(void)
     //setup_watchdogs();
     setup_wavePlayer();
 
-    // loop does not have enough stack size. Do not know how to set it.
-    // Create a task and specify task stack size
-    
 	spawnTaskAndDogV2( runitTask,	//(void * not_used)TaskFunction_t pvTaskCode,
                      "runitTask",   //const char * const pcName,
                      1024 * 30,		//const uint32_t usStackDepth,

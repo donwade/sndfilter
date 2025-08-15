@@ -230,6 +230,8 @@ static inline int reverb(sf_snd input_snd, float tail, const char *preset, const
 	return 0;
 }
 
+extern sf_snd sf_randomload(const char *notused);
+
 int alt_main(int argc, char **argv){
 	if (argc < 4)
 		return printhelp();
@@ -238,7 +240,12 @@ int alt_main(int argc, char **argv){
 	const char *output = argv[2];
 	const char *filter = argv[3];
 
+#if 0
 	sf_snd input_snd = sf_wavload(input);
+#else
+	sf_snd input_snd = sf_randomload(input);
+#endif
+
 	if (input_snd == NULL){
 		fprintf(stderr, "Error: Failed to load WAV: %s\n", input);
 		return 1;

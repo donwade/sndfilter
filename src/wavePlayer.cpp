@@ -13,7 +13,7 @@ static bool hasWavFileExt(char* filename);
 
 
 static constexpr const size_t buf_num = 3;
-static constexpr const size_t buf_size = 1024;
+static constexpr const size_t buf_size = 1024 * 16;
 static SemaphoreHandle_t xCountingSemaphore;
 
 
@@ -55,85 +55,92 @@ struct __attribute__((packed)) sub_chunk_t
 
 //------------------------------------------------
 
-static bool playWavFromSD(const char* filename)
+bool playWavFromSD(const char* filename)
 {
-  char fname[80];
-  strcpy(&fname[1], filename);
-  fname[0]='/';
+	char fname[80];
+	strcpy(&fname[1], filename);
+	fname[0]='/';
 
-  auto file = SD.open(fname);
+	auto file = SD.open(fname);
 
-  if (!file) { return false; }
+	if (!file) { return false; }
 
-  wav_header_t wav_header;
-  file.read((uint8_t*)&wav_header, sizeof(wav_header_t));
+	wav_header_t wav_header;
+	file.read((uint8_t*)&wav_header, sizeof(wav_header_t));
 
-  ESP_LOGD("wav", "RIFF           : %.4s" , wav_header.RIFF          );
-  ESP_LOGD("wav", "chunk_size     : %d"   , wav_header.chunk_size    );
-  ESP_LOGD("wav", "WAVEfmt        : %.8s" , wav_header.WAVEfmt       );
-  ESP_LOGD("wav", "fmt_chunk_size : %d"   , wav_header.fmt_chunk_size);
-  ESP_LOGD("wav", "audiofmt       : %d"   , wav_header.audiofmt      );
-  ESP_LOGD("wav", "channel        : %d"   , wav_header.channel       );
-  ESP_LOGD("wav", "sample_rate    : %d"   , wav_header.sample_rate   );
-  ESP_LOGD("wav", "byte_per_sec   : %d"   , wav_header.byte_per_sec  );
-  ESP_LOGD("wav", "block_size     : %d"   , wav_header.block_size    );
-  ESP_LOGD("wav", "bit_per_sample : %d"   , wav_header.bit_per_sample);
+	Serial.printf("RIFF           : %.4s\n" , wav_header.RIFF          );
+	Serial.printf("chunk_size     : %d\n"   , wav_header.chunk_size    );
+	Serial.printf("WAVEfmt        : %.8s\n" , wav_header.WAVEfmt       );
+	Serial.printf("fmt_chunk_size : %d\n"   , wav_header.fmt_chunk_size);
+	Serial.printf("audiofmt       : %d\n"   , wav_header.audiofmt      );
+	Serial.printf("channel        : %d\n"   , wav_header.channel       );
+	Serial.printf("sample_rate    : %d\n"   , wav_header.sample_rate   );
+	Serial.printf("byte_per_sec   : %d\n"   , wav_header.byte_per_sec  );
+	Serial.printf("block_size     : %d\n"   , wav_header.block_size    );
+	Serial.printf("bit_per_sample : %d\n"   , wav_header.bit_per_sample);
 
-  if ( memcmp(wav_header.RIFF,    "RIFF",     4)
-    || memcmp(wav_header.WAVEfmt, "WAVEfmt ", 8)
-    || wav_header.audiofmt != 1
-    || wav_header.bit_per_sample < 8
-    || wav_header.bit_per_sample > 16
-    || wav_header.channel == 0
-    || wav_header.channel > 2
-    )
-  {
-  	Serial.printf("%s wrong wav format ... rejected\n", fname); 
-    file.close();
-    return false;
-  }
+	if ( memcmp(wav_header.RIFF,    "RIFF",     4)
+	|| memcmp(wav_header.WAVEfmt, "WAVEfmt ", 8)
+	|| wav_header.audiofmt != 1
+	|| wav_header.bit_per_sample < 8
+	|| wav_header.bit_per_sample > 16
+	|| wav_header.channel == 0
+	|| wav_header.channel > 2
+	)
+	{
+		Serial.printf("%s wrong wav format ... rejected\n", fname); 
+		file.close();
+		return false;
+	}
 
-  file.seek(offsetof(wav_header_t, audiofmt) + wav_header.fmt_chunk_size);
-  sub_chunk_t sub_chunk;
+	file.seek(offsetof(wav_header_t, audiofmt) + wav_header.fmt_chunk_size);
+	sub_chunk_t sub_chunk;
 
-  file.read((uint8_t*)&sub_chunk, 8);
+	file.read((uint8_t*)&sub_chunk, 8);
 
-  ESP_LOGD("wav", "sub id         : %.4s" , sub_chunk.identifier);
-  ESP_LOGD("wav", "sub chunk_size : %d"   , sub_chunk.chunk_size);
+	ESP_LOGD("wav", "sub id         : %.4s" , sub_chunk.identifier);
+	ESP_LOGD("wav", "sub chunk_size : %d"   , sub_chunk.chunk_size);
 
-  while(memcmp(sub_chunk.identifier, "data", 4))
-  {
-    if (!file.seek(sub_chunk.chunk_size, SeekMode::SeekCur)) { break; }
-    file.read((uint8_t*)&sub_chunk, 8);
+	while(memcmp(sub_chunk.identifier, "data", 4))
+	{
+		if (!file.seek(sub_chunk.chunk_size, SeekMode::SeekCur)) { break; }
+		file.read((uint8_t*)&sub_chunk, 8);
 
-    ESP_LOGD("wav", "sub id         : %.4s" , sub_chunk.identifier);
-    ESP_LOGD("wav", "sub chunk_size : %d"   , sub_chunk.chunk_size);
-  }
+		ESP_LOGD("wav", "sub id         : %.4s" , sub_chunk.identifier);
+		ESP_LOGD("wav", "sub chunk_size : %d"   , sub_chunk.chunk_size);
+	}
 
-  if (memcmp(sub_chunk.identifier, "data", 4))
-  {
-    file.close();
-    return false;
-  }
+	if (memcmp(sub_chunk.identifier, "data", 4))
+	{
+		file.close();
+		return false;
+	}
 
-  int32_t data_len = sub_chunk.chunk_size;
-  bool flg_16bit = (wav_header.bit_per_sample >> 4);
+	int32_t data_len = sub_chunk.chunk_size;
+	bool flg_16bit = (wav_header.bit_per_sample >> 4);
 
-  size_t idx = 0;
-  while (data_len > 0) {
-    size_t len = data_len < buf_size ? data_len : buf_size;
-    len = file.read(wav_data[idx], len);
-    data_len -= len;
+	size_t idx = 0;
+	while (data_len > 0) 
+	{
+		
+		size_t len = data_len < buf_size ? data_len : buf_size;
+		Serial.printf("len=%d 0x%X\n", len, len);
 
-    if (flg_16bit) {
-      M5.Speaker.playRaw((const int16_t*)wav_data[idx], len >> 1, wav_header.sample_rate, wav_header.channel > 1, 1, 0);
-    } else {
-      M5.Speaker.playRaw((const uint8_t*)wav_data[idx], len, wav_header.sample_rate, wav_header.channel > 1, 1, 0);
-    }
-    idx = idx < (buf_num - 1) ? idx + 1 : 0;
-  }
+		len = file.read(wav_data[idx], len);
+		data_len -= len;
+
+		if (flg_16bit) 
+		{
+			M5.Speaker.playRaw((const int16_t*)wav_data[idx], len >> 1, wav_header.sample_rate, wav_header.channel > 1, 1, 0);
+		}
+		else 
+		{
+			M5.Speaker.playRaw((const uint8_t*)wav_data[idx], len, wav_header.sample_rate, wav_header.channel > 1, 1, 0);
+		}
+			idx = idx < (buf_num - 1) ? idx + 1 : 0;
+	}
   
-  file.close();
+	file.close();
 
   return true;
 }
