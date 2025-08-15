@@ -33,7 +33,7 @@ static inline void write_u32le(File fp, uint32_t v){
 	fp.write((v >> 8) & 0xFF);
 	fp.write((v >> 16) & 0xFF);
 	fp.write((v >> 24) & 0xFF);
-}
+}	
 
 // write an unsigned 16-bit integer in little endian format
 static inline void write_u16le(File fp, uint16_t v){
@@ -42,6 +42,12 @@ static inline void write_u16le(File fp, uint16_t v){
 }
 
 #define LINE Serial.printf("%s:%d \n", __FUNCTION__, __LINE__)
+#define VLINE(val) Serial.printf("%s:%d "#val"= 0x%X (%d) \n", __FUNCTION__, __LINE__, val, val)
+#define V2LINE(val,cal) Serial.printf("%s:%d "#val"= 0x%X (%d) expect 0x%X (%d) \n",\
+	__FUNCTION__, __LINE__,\
+	val, val,\
+	cal, cal)
+
 // load a WAV file (returns NULL for error)
 sf_snd sf_wavload(const char *file){
 
@@ -61,34 +67,46 @@ sf_snd sf_wavload(const char *file){
 	LINE;
 	uint32_t riff = read_u32le(fp);
 	if (riff != 0x46464952){ // 'RIFF'
-		LINE;
+		V2LINE(riff, 0x46464952);
 		fp.close();
 		return NULL;
 	}
 
-	LINE;
+	V2LINE(riff, 0x46464952);
 	read_u32le(fp); // filesize; don't really care about this
 
 	uint32_t wave = read_u32le(fp);
-	if (wave != 0x45564157){ // 'WAVE'
-		fp.close();
+	V2LINE(wave, 0x45564157);
+	
+	if (wave != 0x45564157)
+	{ // 'WAVE'
 		LINE;
+		fp.close();
 		return NULL;
 	}
-
+	LINE;
+	
 	// start reading chunks
 	bool found_fmt = false;
 	uint16_t audioformat;
 	uint16_t numchannels;
 	uint32_t samplerate;
 	uint16_t bps;
-	while (!fp.available()){
+
+	while (fp.available())
+	{
 		uint32_t chunkid = read_u32le(fp);
 		uint32_t chunksize = read_u32le(fp);
-		if (chunkid == 0x20746D66){ // 'fmt '
-
+		
+		V2LINE(chunkid, 0x20746D66);
+		VLINE(chunksize);
+		
+		if (chunkid == 0x20746D66)
+		{ // 'fmt '
 			// confirm we haven't already processed the fmt chunk, and that it's a good size
-			if (found_fmt || chunksize < 16){
+			if (found_fmt || chunksize < 16)
+			{
+				LINE;
 				fp.close();
 				return NULL;
 			}
@@ -97,12 +115,19 @@ sf_snd sf_wavload(const char *file){
 
 			// load the fmt information
 			audioformat = read_u16le(fp);
+			VLINE(audioformat);
+			
 			numchannels = read_u16le(fp);
+			VLINE(numchannels);
+			
 			samplerate  = read_u32le(fp);
+			VLINE(samplerate);
+
 			read_u32le(fp); // byte rate, ignored
 			read_u16le(fp); // block align, ignored
 			bps         = read_u16le(fp);
 
+			VLINE(bps);
 			// only support 1/2-channel 16-bit samples
 			if (audioformat != 1 || bps != 16 || (numchannels != 1 && numchannels != 2)){
 				fp.close();
@@ -113,27 +138,31 @@ sf_snd sf_wavload(const char *file){
 			if (chunksize > 16)
 				fp.seek(chunksize - 16, SeekMode::SeekCur);
 		}
-		else if (chunkid == 0x61746164){ // 'data'
+		
+		else if (chunkid == 0x61746164)
+			{ // 'data'
 
 			// confirm we've already processed the fmt chunk
 			// confirm chunk size is evenly divisible by bytes per sample
 			if (!found_fmt || (chunksize % (numchannels * bps / 8)) != 0){
 				fp.close();
-				LINE;
+				V2LINE(chunkid, 0x61746164);
 				return NULL;
 			}
 
 			// calculate the number of samples based on the chunk size and allocate the space
 			int scount = chunksize / (numchannels * bps / 8);
-			sf_snd snd = sf_snd_new(scount, samplerate, false);
-			if (snd == NULL){
+			sf_snd sndBufferFloat = sf_snd_new(scount, samplerate, false);
+
+			if (sndBufferFloat == NULL){
 				fp.close();
-				LINE;
+				VLINE(sndBufferFloat);
 				return NULL;
 			}
 
 			// read the data and convert to stereo floating point
 			int16_t L, R;
+
 			for (int i = 0; i < scount; i++){
 				// read the sample
 				L = (int16_t)read_u16le(fp);
@@ -146,19 +175,20 @@ sf_snd sf_wavload(const char *file){
 				// notice that int16 samples range from -32768 to 32767, therefore we have a
 				// different divisor depending on whether the value is negative or not
 				if (L < 0)
-					snd->samples[i].L = (float)L / 32768.0f;
+					sndBufferFloat->samples[i].L = (float)L / 32768.0f;
 				else
-					snd->samples[i].L = (float)L / 32767.0f;
+					sndBufferFloat->samples[i].L = (float)L / 32767.0f;
 				if (R < 0)
-					snd->samples[i].R = (float)R / 32768.0f;
+					sndBufferFloat->samples[i].R = (float)R / 32768.0f;
 				else
-					snd->samples[i].R = (float)R / 32767.0f;
+					sndBufferFloat->samples[i].R = (float)R / 32767.0f;
 			}
 
 			// we've loaded the wav data, so just return now
-			LINE;
+			VLINE(sndBufferFloat);
 			fp.close();
-			return snd;
+			return sndBufferFloat;
+			
 		}
 		else{ // skip an unknown chunk
 			if (chunksize > 0)

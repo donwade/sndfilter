@@ -38,6 +38,9 @@ void setup(void)
     //setup_watchdogs();
     setup_wavePlayer();
 
+    // loop does not have enough stack size. Do not know how to set it.
+    // Create a task and specify task stack size
+    
 	spawnTaskAndDogV2( runitTask,	//(void * not_used)TaskFunction_t pvTaskCode,
                      "runitTask",   //const char * const pcName,
                      1024 * 30,		//const uint32_t usStackDepth,
