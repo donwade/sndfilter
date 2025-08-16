@@ -8,9 +8,12 @@
 extern void setup_wavePlayer(void);
 extern int alt_main(int argc, char **argv);
 extern void setup_watchdogs(void);
+extern bool add_to_playlist(char *filename);
 
 static const gpio_num_t SDCARD_CSPIN = GPIO_NUM_4;
 extern bool playWavFromSD(const char* filename);
+
+
 
 void runitTask (void *NOTUSED)
 {
@@ -22,8 +25,9 @@ void runitTask (void *NOTUSED)
     Serial.flush();
 
 	alt_main(i, msg);
-
-	playWavFromSD(msg[2]);
+	
+	add_to_playlist(msg[2]);
+	//playWavFromSD(msg[2]);
 	
     Serial.printf("sssssssssssssssssssssssssssssss\n");
     Tdelay(-1);

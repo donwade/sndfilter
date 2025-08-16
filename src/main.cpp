@@ -103,6 +103,8 @@ static int printhelp(){
 	return 0;
 }
 
+//--------------------------------------------------------------
+
 static inline bool getargs(int argc, char **argv, int size, float *params){
 	if (argc < 4 + size)
 		return false;
@@ -111,10 +113,14 @@ static inline bool getargs(int argc, char **argv, int size, float *params){
 	return true;
 }
 
+//--------------------------------------------------------------
+
 static inline int badargs(const char *filter){
 	fprintf(stderr, "Error: Bad arguments for %s\n", filter);
 	return 1;
 }
+
+//--------------------------------------------------------------
 
 static inline int biquad(sf_snd input_snd, sf_biquad_state_st *state, const char *output){
 	sf_snd output_snd = sf_snd_new(input_snd->size, input_snd->rate, false);
@@ -136,6 +142,7 @@ static inline int biquad(sf_snd input_snd, sf_biquad_state_st *state, const char
 	}
 	return 0;
 }
+//--------------------------------------------------------------
 
 static inline int compressor(sf_snd input_snd, sf_compressor_state_st *state, const char *output){
 	sf_snd output_snd = sf_snd_new(input_snd->size, input_snd->rate, true);
@@ -162,7 +169,7 @@ static inline int compressor(sf_snd input_snd, sf_compressor_state_st *state, co
 	}
 	return 0;
 }
-
+//--------------------------------------------------------------
 static inline int reverb(sf_snd input_snd, float tail, const char *preset, const char *output){
 	sf_reverb_preset p;
 	if      (strcmp(preset, "default"    ) == 0) p = SF_REVERB_PRESET_DEFAULT;
@@ -231,6 +238,8 @@ static inline int reverb(sf_snd input_snd, float tail, const char *preset, const
 }
 
 extern sf_snd sf_randomload(const char *notused);
+
+//--------------------------------------------------------------
 
 int alt_main(int argc, char **argv){
 	if (argc < 4)
@@ -319,3 +328,4 @@ int alt_main(int argc, char **argv){
 	fprintf(stderr, "Error: Bad filter \"%s\"\n", filter);
 	return 1;
 }
+

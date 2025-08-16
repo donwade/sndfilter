@@ -1,7 +1,7 @@
 #include <SD.h>
 #include <M5Unified.h>
 #include "wavePlayer.h"
-//#include "watchdogs.h"
+#include "watchdogs.h"
 #include <cppQueue.h>
 
 #include <esp_log.h>
@@ -13,7 +13,7 @@ static bool hasWavFileExt(char* filename);
 
 
 static constexpr const size_t buf_num = 3;
-static constexpr const size_t buf_size = 1024 * 16;
+static constexpr const size_t buf_size = 1024;
 static SemaphoreHandle_t xCountingSemaphore;
 
 
@@ -55,94 +55,183 @@ struct __attribute__((packed)) sub_chunk_t
 
 //------------------------------------------------
 
-bool playWavFromSD(const char* filename)
+static bool playWavFromSD(const char* filename)
 {
-	char fname[80];
-	strcpy(&fname[1], filename);
-	fname[0]='/';
+  char fname[80];
+  strcpy(&fname[1], filename);
+  fname[0]='/';
 
-	auto file = SD.open(fname);
+  kickDog();
 
-	if (!file) { return false; }
+  auto file = SD.open(fname);
 
-	wav_header_t wav_header;
-	file.read((uint8_t*)&wav_header, sizeof(wav_header_t));
+  if (!file) { return false; }
 
-	Serial.printf("RIFF           : %.4s\n" , wav_header.RIFF          );
-	Serial.printf("chunk_size     : %d\n"   , wav_header.chunk_size    );
-	Serial.printf("WAVEfmt        : %.8s\n" , wav_header.WAVEfmt       );
-	Serial.printf("fmt_chunk_size : %d\n"   , wav_header.fmt_chunk_size);
-	Serial.printf("audiofmt       : %d\n"   , wav_header.audiofmt      );
-	Serial.printf("channel        : %d\n"   , wav_header.channel       );
-	Serial.printf("sample_rate    : %d\n"   , wav_header.sample_rate   );
-	Serial.printf("byte_per_sec   : %d\n"   , wav_header.byte_per_sec  );
-	Serial.printf("block_size     : %d\n"   , wav_header.block_size    );
-	Serial.printf("bit_per_sample : %d\n"   , wav_header.bit_per_sample);
+  wav_header_t wav_header;
+  file.read((uint8_t*)&wav_header, sizeof(wav_header_t));
 
-	if ( memcmp(wav_header.RIFF,    "RIFF",     4)
-	|| memcmp(wav_header.WAVEfmt, "WAVEfmt ", 8)
-	|| wav_header.audiofmt != 1
-	|| wav_header.bit_per_sample < 8
-	|| wav_header.bit_per_sample > 16
-	|| wav_header.channel == 0
-	|| wav_header.channel > 2
-	)
-	{
-		Serial.printf("%s wrong wav format ... rejected\n", fname); 
-		file.close();
-		return false;
-	}
+  Serial.printf( 	"RIFF           : %.4s\n" , wav_header.RIFF          );
+  Serial.printf( 	"chunk_size     : %d\n"   , wav_header.chunk_size    );
+  Serial.printf( 	"WAVEfmt        : %.8s\n" , wav_header.WAVEfmt       );
+  Serial.printf( 	"fmt_chunk_size : %d\n"   , wav_header.fmt_chunk_size);
+  Serial.printf( 	"audiofmt       : %d\n"   , wav_header.audiofmt      );
+  Serial.printf( 	"channel        : %d\n"   , wav_header.channel       );
+  Serial.printf( 	"sample_rate    : %d\n"   , wav_header.sample_rate   );
+  Serial.printf( 	"byte_per_sec   : %d\n"   , wav_header.byte_per_sec  );
+  Serial.printf( 	"block_size     : %d\n"   , wav_header.block_size    );
+  Serial.printf( 	"bit_per_sample : %d\n"   , wav_header.bit_per_sample);
 
-	file.seek(offsetof(wav_header_t, audiofmt) + wav_header.fmt_chunk_size);
-	sub_chunk_t sub_chunk;
+  if ( memcmp(wav_header.RIFF,    "RIFF",     4)
+    || memcmp(wav_header.WAVEfmt, "WAVEfmt ", 8)
+    || wav_header.audiofmt != 1
+    || wav_header.bit_per_sample < 8
+    || wav_header.bit_per_sample > 16
+    || wav_header.channel == 0
+    || wav_header.channel > 2
+    )
+  {
+  	Serial.printf("%s wrong wav format ... rejected\n", fname); 
+    file.close();
+    return false;
+  }
 
-	file.read((uint8_t*)&sub_chunk, 8);
+	
+  file.seek(offsetof(wav_header_t, audiofmt) + wav_header.fmt_chunk_size);
+  sub_chunk_t sub_chunk;
 
-	ESP_LOGD("wav", "sub id         : %.4s" , sub_chunk.identifier);
-	ESP_LOGD("wav", "sub chunk_size : %d"   , sub_chunk.chunk_size);
+  file.read((uint8_t*)&sub_chunk, 8);
 
-	while(memcmp(sub_chunk.identifier, "data", 4))
-	{
-		if (!file.seek(sub_chunk.chunk_size, SeekMode::SeekCur)) { break; }
-		file.read((uint8_t*)&sub_chunk, 8);
+  ESP_LOGD("wav", "sub id         : %.4s" , sub_chunk.identifier);
+  ESP_LOGD("wav", "sub chunk_size : %d"   , sub_chunk.chunk_size);
 
-		ESP_LOGD("wav", "sub id         : %.4s" , sub_chunk.identifier);
-		ESP_LOGD("wav", "sub chunk_size : %d"   , sub_chunk.chunk_size);
-	}
+  while(memcmp(sub_chunk.identifier, "data", 4))
+  {
+    if (!file.seek(sub_chunk.chunk_size, SeekMode::SeekCur)) { break; }
+    file.read((uint8_t*)&sub_chunk, 8);
 
-	if (memcmp(sub_chunk.identifier, "data", 4))
-	{
-		file.close();
-		return false;
-	}
+    ESP_LOGD("wav", "sub id         : %.4s" , sub_chunk.identifier);
+    ESP_LOGD("wav", "sub chunk_size : %d"   , sub_chunk.chunk_size);
+  }
 
-	int32_t data_len = sub_chunk.chunk_size;
-	bool flg_16bit = (wav_header.bit_per_sample >> 4);
+  if (memcmp(sub_chunk.identifier, "data", 4))
+  {
+    file.close();
+    return false;
+  }
 
-	size_t idx = 0;
-	while (data_len > 0) 
-	{
-		
-		size_t len = data_len < buf_size ? data_len : buf_size;
-		Serial.printf("len=%d 0x%X\n", len, len);
+  int32_t data_len = sub_chunk.chunk_size;
+  bool flg_16bit = (wav_header.bit_per_sample >> 4);
 
-		len = file.read(wav_data[idx], len);
-		data_len -= len;
+  size_t idx = 0;
+  while (data_len > 0) {
+    size_t len = data_len < buf_size ? data_len : buf_size;
+    len = file.read(wav_data[idx], len);
+    data_len -= len;
 
-		if (flg_16bit) 
-		{
-			M5.Speaker.playRaw((const int16_t*)wav_data[idx], len >> 1, wav_header.sample_rate, wav_header.channel > 1, 1, 0);
-		}
-		else 
-		{
-			M5.Speaker.playRaw((const uint8_t*)wav_data[idx], len, wav_header.sample_rate, wav_header.channel > 1, 1, 0);
-		}
-			idx = idx < (buf_num - 1) ? idx + 1 : 0;
-	}
+    if (flg_16bit) {
+      M5.Speaker.playRaw((const int16_t*)wav_data[idx], len >> 1, wav_header.sample_rate, wav_header.channel > 1, 1, 0);
+    } else {
+      M5.Speaker.playRaw((const uint8_t*)wav_data[idx], len, wav_header.sample_rate, wav_header.channel > 1, 1, 0);
+    }
+    idx = idx < (buf_num - 1) ? idx + 1 : 0;
+  }
   
-	file.close();
+  file.close();
 
   return true;
+}
+//------------------------------------------------
+
+static cppQueue playlistQ(MAX_FILENAME_LEN, MAX_FILES_QUEUED, FIFO);
+
+void wavPlayerTask(void *NOTUSED)
+{
+	char playThisFile[MAX_FILENAME_LEN+1];
+	
+	while (true)
+	{
+		if (xSemaphoreTake( xCountingSemaphore, pdMS_TO_TICKS(1000) ) == pdTRUE)
+		{
+
+			playlistQ.pop(playThisFile);
+			Serial.printf("popping %s\n", playThisFile);
+
+			if (!strcmp(playThisFile, "delay100.wav"))
+			{
+				Tdelay(100);
+				continue;
+			}
+			else if (!strcmp(playThisFile, "delay200.wav"))
+			{
+				Tdelay(200);
+				continue;
+			}
+			else if (!strcmp(playThisFile, "delay500.wav"))
+			{
+				Tdelay(500);
+				continue;
+			}
+			else if (!strcmp(playThisFile, "delay750.wav"))
+			{
+				Tdelay(750);
+				continue;
+			}
+			else if (!strcmp(playThisFile, "delay1000.wav"))
+			{
+				Tdelay(1000);
+				continue;
+			}
+			else if (!strcmp(playThisFile, "delay5000.wav"))
+			{
+				Tdelay(5000);
+				continue;
+			}
+
+			// not a fake file. its real if it got here
+			playWavFromSD(playThisFile);
+		}
+		else
+		{
+			kickDog();
+		}
+	}
+}
+
+//------------------------------------------------
+
+bool add_to_playlist(char *filename)
+{
+	int i;
+	
+	// verify sound actually exists to play.
+	for(i = 0; i < numActiveSndFiles; i++)
+	{
+		Serial.printf("%s vs %s\n", wavList[i], filename);
+		if (!strcmp (wavList[i], &filename[1]))
+		{
+			break;
+		}
+	}
+
+	if (i == numActiveSndFiles)
+	{
+		Serial.printf("%s:%d caution file %s not in wavList\n", 
+				__FUNCTION__, __LINE__, filename);
+		return false;
+	}
+	
+	if (! playlistQ.push(wavList[i]))
+	{
+		//has to persist, no locals
+		Serial.printf("%s:%d full - dropped %s \n", __FUNCTION__, __LINE__, filename);
+		return false;
+	}
+
+	Serial.printf("added %s\n", wavList[i] );
+	
+	xSemaphoreGive(xCountingSemaphore);
+	
+	return true;
 }
 
 //------------------------------------------------
@@ -173,6 +262,13 @@ void setup_wavePlayer()
 	Serial.println("done!");
 
 	xCountingSemaphore = xSemaphoreCreateCounting(MAX_FILES_QUEUED,0);
+
+	spawnTaskAndDogV2( wavPlayerTask,		//(void * not_used)TaskFunction_t pvTaskCode,
+					 "wavPlayerTask",	 //const char * const pcName,
+					 1024 * 10, 	//const uint32_t usStackDepth,
+					 NULL,			//void * const pvParameters,
+					 1				//UBaseType_t uxPriority)
+					 );
 
 }
 
@@ -219,20 +315,6 @@ static void loadWavFiles(File dir, int numTabs) {
 		Serial.println(wavList[numActiveSndFiles]); //show array item
 		numActiveSndFiles++;
     }
-
-#if 0
-    if (entry.isDirectory()) 
-	{ 
-		// Dir's will print regardless, you may want to exclude these
-      	//Serial.print(entry.name());
-      	//Serial.println("/");
-     	//loadWavFiles(entry, numTabs+1);
-    } else {
-      	// files have sizes, directories do not
-      	//Serial.print("\t\t");
-      	//Serial.println(entry.size(), DEC);
-    }
-#endif
 
     entry.close();
     

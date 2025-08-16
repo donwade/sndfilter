@@ -209,10 +209,13 @@ sf_snd sf_wavload(const char *file){
 	fp.close();
 	return NULL;
 }
+//-------------------------------------------------------------
 
 static float clampf(float v, float min, float max){
 	return v < min ? min : (v > max ? max : v);
 }
+
+//-------------------------------------------------------------
 
 // save a WAV file (returns false for error)
 bool sf_wavsave(sf_snd snd, const char *file){
@@ -221,8 +224,16 @@ bool sf_wavsave(sf_snd snd, const char *file){
 		return false;
 
 	// calculate the different file sizes based on sample size
+
+#ifdef ARDUINO_BOARD	
+	uint32_t size2 = snd->size * 2; // total bytes of data
+#else
 	uint32_t size2 = snd->size * 4; // total bytes of data
+	#error not an err if its NOT an esp board.
+#endif
+
 	uint32_t sizeall = size2 + 36; // total file size minus 8
+	
 	if (snd->size > size2 || snd->size > sizeall || size2 > sizeall)
 		return false; // sample too large
 
@@ -232,31 +243,50 @@ bool sf_wavsave(sf_snd snd, const char *file){
 	write_u32le(fp, 0x20746D66);    // 'fmt '
 	write_u32le(fp, 16);            // size of fmt chunk
 	write_u16le(fp, 1);             // audio format
-	write_u16le(fp, 2);             // stereo
+	
+#ifdef ARDUINO_BOARD	
+	write_u16le(fp, 1);             // mono
+#else
+	write_u16le(fp, 2); 			// stereo
+#endif
+
 	write_u32le(fp, snd->rate);     // sample rate
+#ifdef ARDUINO_BOARD	
+	write_u32le(fp, snd->rate * 2); // bytes per second
+#else
 	write_u32le(fp, snd->rate * 4); // bytes per second
+#endif
 	write_u16le(fp, 4);             // block align
-	write_u16le(fp, 16);            // bits per sample
+	write_u16le(fp, 16);            // bits per channel
 	write_u32le(fp, 0x61746164);    // 'data'
 	write_u32le(fp, size2);         // size of data chunk
 
 	// convert the sample to stereo 16-bit, and write to file
-	for (int i = 0; i < snd->size; i++){
+	for (int i = 0; i < snd->size; i++)
+	{
+		int16_t Lv;
 		float L = clampf(snd->samples[i].L, -1, 1);
-		float R = clampf(snd->samples[i].R, -1, 1);
-		int16_t Lv, Rv;
-		// once again, int16 samples range from -32768 to 32767, so we need to scale the floating
-		// point sample by a different factor depending on whether it's negative
 		if (L < 0)
 			Lv = (int16_t)(L * 32768.0f);
 		else
 			Lv = (int16_t)(L * 32767.0f);
+		write_u16le(fp, (uint16_t)Lv);
+
+#ifndef ARDUINO_BOARD	
+		
+		int16_t Rv;
+		float R = clampf(snd->samples[i].R, -1, 1);
+
+		// once again, int16 samples range from -32768 to 32767, so we need to scale the floating
+		// point sample by a different factor depending on whether it's negative
 		if (R < 0)
 			Rv = (int16_t)(R * 32768.0f);
 		else
 			Rv = (int16_t)(R * 32767.0f);
-		write_u16le(fp, (uint16_t)Lv);
+		
 		write_u16le(fp, (uint16_t)Rv);
+#endif
+
 	}
 
 	fp.close();
